@@ -1,5 +1,5 @@
 const PROVIDER = "HdHub4u";
-const BASE_URL = "https://new8.hdhub4u.cl";
+const BASE_URL = "https://new15.hdhub4u.cl";
 const TMDB_API = "https://api.themoviedb.org/3";
 const TMDB_KEY = (typeof TMDB_API_KEY !== "undefined" && TMDB_API_KEY) || "307b7b8ef035c6aa336900aef4e203bd";
 const SEARCH_URL = "https://search.pingora.fyi";
