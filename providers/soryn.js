@@ -1,289 +1,170 @@
-"use strict";
-
-const PROVIDER = "Netmirror";
-const BASE_URL = "https://net27.cc";
-const TMDB_API = "https://api.themoviedb.org/3";
-const TMDB_KEY = (typeof TMDB_API_KEY !== "undefined" && TMDB_API_KEY) || "307b7b8ef035c6aa336900aef4e203bd";
-const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
-const PLATFORM_MAP = {
-    netflix: { ott: "nf" },
-    primevideo: { ott: "pv" },
-    hotstar: { ott: "hs" },
-    disney: { ott: "hs" },
+const PROVIDER = "NetMirror";
+const BASE_URL = "https://net79.cc";
+const USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36";
+const REFERER = "https://videodownloader.site/";
+const LANGS = {
+    arabic: "Arabic", bangla: "Bengali", bengali: "Bengali", chinese: "Chinese",
+    english: "English", french: "French", german: "German", gujarati: "Gujarati",
+    hindi: "Hindi", indonesian: "Indonesian", italian: "Italian", japanese: "Japanese",
+    kannada: "Kannada", korean: "Korean", malayalam: "Malayalam", marathi: "Marathi",
+    portuguese: "Portuguese", punjabi: "Punjabi", russian: "Russian", spanish: "Spanish",
+    tamil: "Tamil", telugu: "Telugu", thai: "Thai", turkish: "Turkish",
+    urdu: "Urdu", vietnamese: "Vietnamese",
 };
-const NEW_TV_BASE_HEADERS = {
-    "Cache-Control": "no-cache, no-store, must-revalidate",
-    "Pragma": "no-cache",
-    "Expires": "0",
-    "X-Requested-With": "NetmirrorNewTV v1.0",
-    "User-Agent": `Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) Gecko/20100101 Firefox/136.0 /OS.GatuNewTV v1.0`,
-    "Accept": "application/json, text/plain, */*",
-};
-const PLAYBACK_HEADERS = {
-    "Referer": "https://videodownloader.site/",
+const HEADERS = {
     "User-Agent": USER_AGENT,
-};
-const NET27_HEADERS = {
-    "Accept": "application/json, text/plain, */*",
     "Referer": `${BASE_URL}/`,
-    "User-Agent": USER_AGENT,
+    "Accept": "application/json, text/plain, */*",
 };
-const NEW_TV_DOMAINS = [
-    "aHR0cHM6Ly9tb2JpbGVkZXRlY3RzLmNvbQ==",
-    "aHR0cHM6Ly9tb2JpbGVkZXR0LmFwcA==",
-    "aHR0cHM6Ly9tb2JpZGV0ZWN0LmFydA==",
-    "aHR0cHM6Ly9tb2JpZGV0ZWN0LmNj",
-    "aHR0cHM6Ly9tb2JpZGV0ZWN0LmNsaWNr",
-    "aHR0cHM6Ly9tb2JpZGV0ZWN0Lmluaw==",
-    "aHR0cHM6Ly9tb2JpZGV0ZWN0LmxpdmU=",
-    "aHR0cHM6Ly9tb2JpZGV0ZWN0LnBybw==",
-    "aHR0cHM6Ly9tb2JpZGV0ZWN0LnNob3A=",
-    "aHR0cHM6Ly9tb2JpZGV0ZWN0LnNpdGU=",
-    "aHR0cHM6Ly9tb2JpZGV0ZWN0LnNwYWNl",
-    "aHR0cHM6Ly9tb2JpZGV0ZWN0LnN0b3Jl",
-    "aHR0cHM6Ly9tb2JpZGV0ZWN0LnZpcA==",
-    "aHR0cHM6Ly9tb2JpZGV0ZWN0Lndpa2k=",
-    "aHR0cHM6Ly9tb2JpZGV0ZWN0Lnh5eg==",
-    "aHR0cHM6Ly9tb2JpZGV0ZWN0cy5hcnQ=",
-    "aHR0cHM6Ly9tb2JpZGV0ZWN0cy5jYw==",
-    "aHR0cHM6Ly9tb2JpZGV0ZWN0cy5pbmZv",
-    "aHR0cHM6Ly9tb2JpZGV0ZWN0cy5pbks=",
-    "aHR0cHM6Ly9tb2JpZGV0ZWN0cy5saXZl",
-    "aHR0cHM6Ly9tb2JpZGV0ZWN0cy5wcm8=",
-    "aHR0cHM6Ly9tb2JpZGV0ZWN0cy5zdG9yZQ==",
-    "aHR0cHM6Ly9tb2JpZGV0ZWN0cy50b3A=",
-    "aHR0cHM6Ly9tb2JpZGV0ZWN0cy54eXo=",
-];
+const S_HEADERS = {
+    "User-Agent": USER_AGENT,
+    "Referer": REFERER,
+};
 
-let resolvedApiUrl = "";
+const list = (value) => (Array.isArray(value) ? value : []);
+const isObject = (value) => value && typeof value === "object";
 
-function meetsQualityFilter(quality) {
-    if (quality === "Auto") return true;
-    const num = parseInt(quality, 10);
-    return !isNaN(num) && num >= 720;
-}
-
-function buildNewTvHeaders(ott) {
-    return { ...NEW_TV_BASE_HEADERS, Ott: ott };
-}
-
-function buildNewTvPlayerHeaders(ott) {
-    return { ...NEW_TV_BASE_HEADERS, Ott: ott, Usertoken: "" };
-}
-
-async function resolveApiUrl() {
-    if (resolvedApiUrl) return resolvedApiUrl;
-    for (const encoded of NEW_TV_DOMAINS) {
-        const base = atob(encoded).replace(/\/$/, "");
-        try {
-            const res = await fetch(`${base}/checknewtv.php`, {
-                headers: { ...NEW_TV_BASE_HEADERS, "User-Agent": USER_AGENT },
-            });
-            const data = await res.json();
-            if (data && data.token_hash) {
-                resolvedApiUrl = atob(data.token_hash).replace(/\/$/, "");
-                return resolvedApiUrl;
-            }
-        } catch (_) { }
-    }
-    return null;
-}
-
-async function fetchJson(url, headers) {
+async function fetchJson(url) {
     try {
-        const res = await fetch(url, { headers });
-        if (!res.ok) return null;
-        return await res.json();
-    } catch (_) {
+        const response = await fetch(url, { method: "GET", headers: HEADERS });
+        const body = response && response.ok ? ((await response.text()) || "").trim() : "";
+        return body && body.charAt(0) !== "<" ? JSON.parse(body) : null;
+    } catch (error) {
         return null;
     }
 }
 
-async function fetchFromNetflixDirect(tmdbId, mediaType, season, episode) {
-    const url = mediaType === "tv"
-        ? `${BASE_URL}/api/embed-tmdb/${tmdbId}?type=tv&s=${season}&e=${episode}`
-        : `${BASE_URL}/api/embed-tmdb/${tmdbId}`;
+function getTier(height) {
+    const pixels = Number(height) || 0;
+    if (pixels >= 2160) return 2160;
+    if (pixels >= 1080 && pixels < 1440) return 1080;
+    if (pixels >= 720 && pixels < 1080) return 720;
+    return 0;
+}
 
-    const data = await fetchJson(url, NET27_HEADERS);
-    if (!data || data.ok !== true) return [];
+function buildSortPrefix(tier) {
+    return [2160, 1080, 720].indexOf(tier).toString(2).padStart(20, "0")
+        .replace(/./g, (bit) => (bit === "1" ? "\uFEFF" : "\u200B"));
+}
 
-    const subtitles = (data.captions || []).map(c => {
-        const subUrl = c.url && c.url.startsWith("/") ? `${BASE_URL}${c.url}` : c.url;
-        return { url: subUrl, language: c.lang || "en", name: c.name || "English", headers: PLAYBACK_HEADERS };
+function formatFileSize(bytes) {
+    const value = Number(bytes);
+    if (!isFinite(value) || value <= 0) return "";
+    const gigabytes = value / 1024 ** 3;
+    return gigabytes >= 1
+        ? `${gigabytes.toFixed(2).replace(/\.?0+$/, "")} GB`
+        : `${Math.round(value / 1024 ** 2)} MB`;
+}
+
+function selectDubVariants(payload) {
+    const preferred = ["Hindi", "Bengali", "Tamil", "Telugu", "Malayalam", "Kannada", "Urdu", "Punjabi", "Gujarati", "Marathi"];
+    const rank = (langUSER_AGENTge) => {
+        const index = preferred.indexOf(langUSER_AGENTge);
+        return index < 0 ? preferred.length : index;
+    };
+
+    return list(payload?.variants)
+        .filter((variant) => isObject(variant) && variant.isOriginal !== true)
+        .map((variant) => ({
+            subjectId: String(variant.dubSubjectId || ""),
+            detailPath: String(variant.detailPath || ""),
+            langUSER_AGENTge: (String(variant.langUSER_AGENTge || "").trim().match(/^(.*)\s+dub$/i)?.[1] ?? "")
+                .split(/[\s+,&\/|.:;_()\[\]{}-]+/)
+                .map((token) => LANGS[token.toLowerCase()])
+                .find(Boolean),
+        }))
+        .filter((variant) => variant.subjectId && variant.detailPath && variant.langUSER_AGENTge)
+        .sort((left, right) => rank(left.langUSER_AGENTge) - rank(right.langUSER_AGENTge))
+        .filter((variant, index, all) => all.findIndex((other) => other.subjectId === variant.subjectId) === index)
+        .slice(0, 4);
+}
+
+function extractStreams(payload, langUSER_AGENTge) {
+    if (!payload || payload.ok !== true) return [];
+
+    const entries = list(payload.streams)
+        .filter(isObject)
+        .map((entry) => ({ url: entry.url, height: entry.resolution, size: entry.size }));
+    if (!entries.length) entries.push({ url: payload.mp4, height: payload.resolution, size: 0 });
+
+    return entries
+        .map((entry) => ({
+            url: String(entry.url || ""),
+            tier: getTier(entry.height),
+            langUSER_AGENTge: langUSER_AGENTge || "Original",
+            size: formatFileSize(entry.size),
+        }))
+        .filter((stream) => stream.url.startsWith("http") && stream.tier);
+}
+
+function extractSubtitles(payload) {
+    return list(payload?.captions)
+        .filter((caption) => isObject(caption) && caption.url)
+        .map((caption) => {
+            const path = String(caption.url);
+            const langUSER_AGENTge = String(caption.lang || caption.name || "Unknown");
+            return {
+                url: path.startsWith("http") ? path : `${BASE_URL}${path.startsWith("/") ? path : `/${path}`}`,
+                langUSER_AGENTge,
+                name: String(caption.name || langUSER_AGENTge),
+            };
+        })
+        .slice(0, 40);
+}
+
+function mergeStreamGroups(groups) {
+    const streamsByUrl = new Map();
+    groups.flat().forEach((stream) => {
+        const key = stream.url.split("?")[0];
+        const existing = streamsByUrl.get(key);
+        if (!existing || (existing.langUSER_AGENTge === "Original" && stream.langUSER_AGENTge !== "Original")) {
+            streamsByUrl.set(key, stream);
+        }
     });
-
-    const streams = [];
-
-    if (data.streams && data.streams.length > 0) {
-        for (const stream of data.streams) {
-            const quality = `${stream.resolution}p`;
-            if (meetsQualityFilter(quality)) {
-                streams.push({
-                    name: `${PROVIDER} • ${quality}`,
-                    title: `${PROVIDER} • ${quality}`,
-                    url: stream.url,
-                    quality,
-                    headers: PLAYBACK_HEADERS,
-                    subtitles,
-                });
-            }
-        }
-    } else if (data.mp4) {
-        streams.push({
-            name: `${PROVIDER} • Auto`,
-            title: `${PROVIDER} • Auto`,
-            url: data.mp4,
-            quality: "Auto",
-            headers: PLAYBACK_HEADERS,
-            subtitles,
-        });
-    }
-
-    return streams;
+    return [...streamsByUrl.values()];
 }
 
-async function fetchEpisodesPage(seasonId, page, seasonNumber, ott, apiBase) {
-    const episodes = [];
-    let pg = page;
-    while (true) {
-        const data = await fetchJson(`${apiBase}/newtv/episodes.php?id=${seasonId}&page=${pg}`, buildNewTvHeaders(ott));
-        if (!data || !data.episodes) break;
-        for (const ep of data.episodes) {
-            if (!ep) continue;
-            const epNum = ep.ep ? parseInt(ep.ep) : ep.epNum ? parseInt(ep.epNum.replace("E", "")) : null;
-            const sNum = seasonNumber || (ep.sNum ? parseInt(ep.sNum.replace("S", "")) : null);
-            episodes.push({ id: ep.id, s: sNum, ep: epNum });
-        }
-        if (data.nextPageShow !== 1) break;
-        pg++;
-    }
-    return episodes;
-}
-
-async function getAllEpisodes(postData, ott, apiBase) {
-    const episodes = [];
-    const selectedSeasonIdx = postData.season
-        ? postData.season.findIndex(s => s.selected === true)
-        : -1;
-    const selectedSeasonId = selectedSeasonIdx >= 0
-        ? postData.season[selectedSeasonIdx].id
-        : postData.nextPageSeason;
-    const selectedSeasonNumber = selectedSeasonIdx >= 0 ? selectedSeasonIdx + 1 : null;
-
-    if (postData.episodes) {
-        for (const ep of postData.episodes) {
-            if (!ep) continue;
-            const epNum = ep.ep ? parseInt(ep.ep) : ep.epNum ? parseInt(ep.epNum.replace("E", "")) : null;
-            const sNum = selectedSeasonNumber || (ep.sNum ? parseInt(ep.sNum.replace("S", "")) : null);
-            episodes.push({ id: ep.id, s: sNum, ep: epNum });
-        }
-    }
-
-    const extraPageFetches = [];
-
-    if (postData.nextPageShow === 1 && selectedSeasonId) {
-        extraPageFetches.push(fetchEpisodesPage(selectedSeasonId, 2, selectedSeasonNumber, ott, apiBase));
-    }
-
-    if (postData.season) {
-        for (let i = 0; i < postData.season.length; i++) {
-            const s = postData.season[i];
-            if (s.id && s.id !== selectedSeasonId) {
-                extraPageFetches.push(fetchEpisodesPage(s.id, 1, i + 1, ott, apiBase));
-            }
-        }
-    }
-
-    const extra = await Promise.all(extraPageFetches);
-    for (const batch of extra) episodes.push(...batch);
-
-    return episodes;
-}
-
-async function fetchFromPlatform(platformKey, title, mediaType, season, episode) {
-    const { ott } = PLATFORM_MAP[platformKey];
-    const apiBase = await resolveApiUrl();
-    if (!apiBase) return [];
-
-    const searchData = await fetchJson(
-        `${apiBase}/newtv/search.php?s=${encodeURIComponent(title)}`,
-        buildNewTvHeaders(ott),
-    );
-    if (!searchData || !searchData.searchResult || searchData.searchResult.length === 0) return [];
-
-    const contentId = searchData.searchResult[0].id;
-
-    const postData = await fetchJson(
-        `${apiBase}/newtv/post.php?id=${contentId}`,
-        { ...buildNewTvPlayerHeaders(ott), Lastep: "" },
-    );
-    if (!postData) return [];
-
-    let targetId;
-    if (mediaType === "tv") {
-        const episodes = await getAllEpisodes(postData, ott, apiBase);
-        const target = episodes.find(ep => ep && ep.s === season && ep.ep === episode);
-        if (!target) return [];
-        targetId = target.id;
-    } else {
-        const isSeries = postData.type === "t" || (postData.episodes && postData.episodes.filter(e => e !== null).length > 0);
-        if (isSeries) return [];
-        targetId = postData.main_id || contentId;
-    }
-
-    const response = await fetchJson(
-        `${apiBase}/newtv/player.php?id=${targetId}`,
-        buildNewTvPlayerHeaders(ott),
-    );
-    if (!response || response.status !== "ok" || !response.video_link) return [];
-
-    const label = platformKey.charAt(0).toUpperCase() + platformKey.slice(1);
-    return [{
-        name: `${PROVIDER} • ${label}`,
-        title: `${PROVIDER} • ${label}`,
-        url: response.video_link,
-        quality: "Auto",
-        headers: { Referer: response.referer || apiBase },
-    }];
+function returnStream(stream, subtitles) {
+    const mainTitle = `${buildSortPrefix(stream.tier)}${PROVIDER} \u2022 ${stream.langUSER_AGENTge}`;
+    const qUSER_AGENTlityUp = `${stream.tier}P`;
+    const streamTitle = stream.size || stream.langUSER_AGENTge;
+    return {
+        name: mainTitle,
+        title: mainTitle,
+        url: stream.url,
+        qUSER_AGENTlity: `${qUSER_AGENTlityUp} \u2022 ${streamTitle}`,
+        type: stream.url.includes(".m3u8") ? "hls" : "mp4",
+        headers: S_HEADERS,
+        ...(subtitles.length && { subtitles }),
+    };
 }
 
 async function getStreams(tmdbId, mediaType, season, episode) {
     try {
-        if (mediaType === "tv" && (season == null || episode == null)) return [];
+        const contentId = String(tmdbId);
+        const isTvShow = mediaType === "tv";
+        if (!/^\d+$/.test(contentId) || (isTvShow && (season == null || episode == null))) return [];
 
-        const tmdbData = await fetchJson(
-            `${TMDB_API}/${mediaType === "tv" ? "tv" : "movie"}/${tmdbId}?api_key=${TMDB_KEY}`,
-            { "User-Agent": USER_AGENT, "Accept": "application/json" },
-        );
-        if (!tmdbData) return [];
+        const type = isTvShow ? "tv" : "movie";
+        const query = isTvShow ? `se=${season}&ep=${episode}` : "";
+        const embedUrl = `${BASE_URL}/api/embed-tmdb/${contentId}?type=${type}${query && `&${query}`}`;
+        const variantsUrl = `${BASE_URL}/api/variants-tmdb/${type}/${contentId}${query && `?${query}`}`;
 
-        const title = mediaType === "tv" ? tmdbData.name : tmdbData.title;
-        if (!title) return [];
-
-        const [netflixDirect, ...platformResults] = await Promise.all([
-            fetchFromNetflixDirect(tmdbId, mediaType, season, episode),
-            ...["primevideo", "hotstar", "disney"].map(p =>
-                fetchFromPlatform(p, title, mediaType, season, episode).catch(() => [])
-            ),
-        ]);
-
-        let streams = [...(netflixDirect || [])];
-
-        if (streams.length === 0) {
-            streams = await fetchFromPlatform("netflix", title, mediaType, season, episode).catch(() => []);
+        let embed = null;
+        let variants = null;
+        for (let attempt = 0; attempt < 4 && !embed; attempt += 1) {
+            [embed, variants] = await Promise.all([fetchJson(embedUrl), fetchJson(variantsUrl)]);
         }
 
-        for (const batch of platformResults) {
-            if (batch && batch.length > 0) streams.push(...batch);
-        }
+        const dubGroups = await Promise.all(selectDubVariants(variants).map(async (variant) => {
+            const dubUrl = `${embedUrl}&dub=${encodeURIComponent(variant.subjectId)}&dubdp=${encodeURIComponent(variant.detailPath)}`;
+            return extractStreams(await fetchJson(dubUrl), variant.langUSER_AGENTge);
+        }));
 
-        const seen = new Set();
-        return streams.filter(s => {
-            if (!s.url || !meetsQualityFilter(s.quality) || seen.has(s.url)) return false;
-            seen.add(s.url);
-            return true;
-        });
-    } catch (_) {
+        const subtitles = extractSubtitles(embed);
+        return mergeStreamGroups([extractStreams(embed, ""), ...dubGroups])
+            .map((stream) => returnStream(stream, subtitles));
+    } catch (error) {
         return [];
     }
 }
