@@ -1,4 +1,4 @@
-const BASE_URL = 'https://bingebang.st';
+const BASE_URL = 'https://bingebang.sx';
 const TMDB_API = 'https://api.themoviedb.org/3';
 const TMDB_KEY = (typeof TMDB_API_KEY !== "undefined" && TMDB_API_KEY) || "307b7b8ef035c6aa336900aef4e203bd";
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36';
