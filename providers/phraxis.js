@@ -12,10 +12,10 @@ async function fetchText(url, headers) {
     }
 }
 
-function unsealUrl(value) {
+function decodeSealedUrl(value, overrideKey) {
     if (!value.startsWith("pa!~")) return value;
     try {
-        const key = atob("cGE0dS1zdHJlYW0tc2VhbC12MQ==");
+        const key = overrideKey || atob("cGE0dS1zdHJlYW0tc2VhbC12MQ==");
         const base64 = value.slice(4).replace(/-/g, "+").replace(/_/g, "/");
         const binary = atob(base64 + "=".repeat((4 - base64.length % 4) % 4));
         return Array.from(binary, (char, i) =>
@@ -24,6 +24,22 @@ function unsealUrl(value) {
     } catch (error) {
         return "";
     }
+}
+
+function readPageXorKey(html) {
+    const found = html.match(/window\.__PA_SEAL_KEY__\s*=\s*"([^"]+)"/);
+    return found ? found[1] : null;
+}
+
+function looksPlayableUrl(candidate) {
+    if (typeof candidate !== "string" || candidate.length < 16) return false;
+    if (!/^https?:\/\/[A-Za-z0-9.-]+(:\d+)?\//.test(candidate)) return false;
+    return !/[\x00-\x20\x7f-\uffff]/.test(candidate);
+}
+
+function withHlsHint(candidate) {
+    if (!looksPlayableUrl(candidate)) return null;
+    return candidate + (candidate.indexOf("?") < 0 ? "?type=.m3u8" : "&type=.m3u8");
 }
 
 async function resolveImdbId(id, isSeries) {
@@ -87,16 +103,21 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         const state = html && extractPlayerState(html);
         if (!state || !state.ok || !Array.isArray(state.streams)) return [];
 
+        const siteKey = readPageXorKey(html);
         const headers = { "User-Agent": USER_AGENT, Referer: `${BASE_URL}/`, Origin: BASE_URL };
         const seen = new Set();
 
         return state.streams
             .filter(function (s) { return s && s.m3u8_url; })
-            .map(function (s) { return { height: getHeight(s), url: unsealUrl(s.m3u8_url), label: buildLabel(s) }; })
+            .map(function (s) {
+                let decoded = decodeSealedUrl(s.m3u8_url, siteKey);
+                if (!looksPlayableUrl(decoded) && siteKey) decoded = decodeSealedUrl(s.m3u8_url);
+                return { height: getHeight(s), url: withHlsHint(decoded), label: buildLabel(s) };
+            })
             .filter(function (s) { return s.height >= 1080 && s.url && !seen.has(s.url) && seen.add(s.url); })
             .sort(function (a, b) { return b.height - a.height; })
             .map(function (s) {
-                return { name: s.label, title: s.label, url: s.url, quality: formatQuality(s.height), type: "hls", headers };
+                return { name: s.label, title: s.label, url: s.url, quality: formatQuality(s.height), type: "hls", isM3u8: true, headers };
             });
     } catch (error) {
         return [];
