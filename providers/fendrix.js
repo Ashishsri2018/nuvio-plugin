@@ -3,7 +3,7 @@ const API_BASE = ["https://api.wing.st", "https://api.shegu.st"];
 const TMDB_API = "https://api.themoviedb.org/3";
 const TMDB_KEY = (typeof TMDB_API_KEY !== "undefined" && TMDB_API_KEY) || "307b7b8ef035c6aa336900aef4e203bd";
 const HEADERS = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36" };
-const SERVERS = ["Nebula", "Secret"];
+const SERVERS = ["Nebula", "Light", "Sirius"];
 
 async function fetchTmdbMediaDetails(tmdbId, mediaType) {
   if (!TMDB_KEY) return null;

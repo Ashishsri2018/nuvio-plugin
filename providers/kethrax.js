@@ -1,11 +1,12 @@
 const BASE_URL = "https://vixsrc.to";
 const TMDB_API = "https://api.themoviedb.org/3";
 const TMDB_KEY = (typeof TMDB_API_KEY !== "undefined" && TMDB_API_KEY) || "307b7b8ef035c6aa336900aef4e203bd";
-const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36";
+const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36";
 const HEADERS = {
     "User-Agent": USER_AGENT,
     "Accept": "*/*",
     "Referer": `${BASE_URL}/`,
+    "Origin": BASE_URL,
 };
 
 async function fetchText(url) {
@@ -14,11 +15,63 @@ async function fetchText(url) {
     return await res.text();
 }
 
+function absUrl(uri, base) {
+    if (!uri) return "";
+    if (/^https?:\/\//i.test(uri)) return uri;
+    const origin = (base.match(/^https?:\/\/[^\/]+/i) || [""])[0];
+    if (uri.charAt(0) === "/") return origin + uri;
+    return base.split("?")[0].replace(/[^\/]*$/, "") + uri;
+}
+
+function objectAt(source, start) {
+    let depth = 0;
+    let quote = "";
+    for (let i = start; i < source.length; i++) {
+        const ch = source[i];
+        if (quote) {
+            if (ch === "\\") i++;
+            else if (ch === quote) quote = "";
+        } else if (ch === '"' || ch === "'") {
+            quote = ch;
+        } else if (ch === "{") {
+            depth++;
+        } else if (ch === "}" && --depth === 0) {
+            return source.slice(start, i + 1);
+        }
+    }
+    return "";
+}
+
+function readLiterals(source) {
+    const values = {};
+    const pattern = /(?:"(\w+)"|'(\w+)'|\b(\w+))\s*:\s*("(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|\d+)/g;
+    let match;
+    while ((match = pattern.exec(source)) !== null) {
+        const raw = match[4];
+        values[match[1] || match[2] || match[3]] = /^['"]/.test(raw) ? raw.slice(1, -1).replace(/\\(.)/g, "$1") : raw;
+    }
+    return values;
+}
+
+function extractMaster(html) {
+    const assignment = /\bwindow\.masterPlaylist\s*=\s*\{/.exec(html);
+    if (!assignment) return null;
+    const master = objectAt(html, assignment.index + assignment[0].length - 1);
+    const paramsMatch = /(?:\bparams|"params"|'params')\s*:\s*\{/.exec(master);
+    if (!paramsMatch) return null;
+    const block = objectAt(master, paramsMatch.index + paramsMatch[0].length - 1);
+    const params = readLiterals(block);
+    const fields = readLiterals(master.replace(block, "{}"));
+    if (!fields.url || !params.token) return null;
+    return { params, url: absUrl(fields.url, BASE_URL).split("#")[0] };
+}
+
 function parseAttrs(line) {
     const out = {};
-    const regex = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/g;
+    const regex = /(?:^|,)([A-Z0-9-]+)=("[^"]*"|[^,]*)/g;
     let match;
-    while ((match = regex.exec(line)) !== null) {
+    const source = line.slice(line.indexOf(":") + 1);
+    while ((match = regex.exec(source)) !== null) {
         let value = match[2] || "";
         if (value.charAt(0) === '"' && value.charAt(value.length - 1) === '"') value = value.slice(1, -1);
         out[match[1]] = value;
@@ -26,7 +79,7 @@ function parseAttrs(line) {
     return out;
 }
 
-function parseMaster(text) {
+function parseMaster(text, masterUrl) {
     const lines = String(text || "").split(/\r?\n/);
     const variants = [];
     const subtitles = [];
@@ -36,7 +89,7 @@ function parseMaster(text) {
             const attrs = parseAttrs(line);
             if (attrs.TYPE === "SUBTITLES" && attrs.URI) {
                 subtitles.push({
-                    url: attrs.URI,
+                    url: absUrl(attrs.URI, masterUrl),
                     language: String(attrs.LANGUAGE || "und").toLowerCase(),
                     name: attrs.NAME || attrs.LANGUAGE || "Subtitle",
                 });
@@ -64,13 +117,13 @@ function bestQuality(variants) {
 }
 
 function buildUrl(base, params) {
-    const separator = base.indexOf("?") === -1 ? "?" : "&";
-    const query = [];
-    Object.keys(params).forEach((key) => {
-        if (params[key] === "" || params[key] == null) return;
-        query.push(`${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`);
-    });
-    return base + separator + query.join("&");
+    const q = base.indexOf("?");
+    const path = q === -1 ? base : base.slice(0, q);
+    const existing = q === -1 ? [] : base.slice(q + 1).split("&").filter(Boolean);
+    const keys = Object.keys(params).filter((k) => params[k] !== "" && params[k] != null);
+    const retained = existing.filter((part) => keys.indexOf(part.split("=")[0]) === -1);
+    const signed = keys.map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`);
+    return path + "?" + retained.concat(signed).join("&");
 }
 
 async function subtitleSegment(url) {
@@ -121,15 +174,15 @@ async function fetchDuration(tmdbId, mediaType, season, episode) {
 
 async function getStreams(tmdbId, mediaType, season, episode) {
     try {
-        const id = String(tmdbId || "").trim();
+        const id = String(tmdbId || "").trim().replace(/^tmdb:/i, "");
         if (!id) return [];
         const type = mediaType === "tv" || mediaType === "series" ? "tv" : "movie";
         const sea = parseInt(season, 10) || 1;
         const ep = parseInt(episode, 10) || 1;
 
         const apiUrl = type === "tv"
-            ? `${BASE_URL}/api/tv/${encodeURIComponent(id)}/${sea}/${ep}`
-            : `${BASE_URL}/api/movie/${encodeURIComponent(id)}`;
+            ? `${BASE_URL}/api/tv/${encodeURIComponent(id)}/${sea}/${ep}?lang=it&_=${Date.now()}`
+            : `${BASE_URL}/api/movie/${encodeURIComponent(id)}?lang=it&_=${Date.now()}`;
 
         const [duration, apiBody] = await Promise.all([
             fetchDuration(id, type, sea, ep),
@@ -140,30 +193,31 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         const src = data && data.src;
         if (!src) return [];
 
-        const html = await fetchText(BASE_URL + src);
+        const html = await fetchText(absUrl(String(src), BASE_URL + "/"));
 
-        const paramsMatch = html.match(/params:\s*\{([\s\S]*?)\},\s*url:\s*'([^']+)'/);
-        if (!paramsMatch) return [];
+        const extracted = extractMaster(html);
+        if (!extracted) return [];
 
-        const params = {};
-        paramsMatch[1].replace(/'([^']+)'\s*:\s*'([^']*)'/g, (_, key, value) => {
-            params[key] = value;
-            return "";
-        });
-        params.h = "1";
-        params.lang = "en";
+        const params = extracted.params;
+        if (/canPlayFHD\s*=\s*true/.test(html)) params.h = "1";
 
-        const masterBase = paramsMatch[2];
+        let masterBase = extracted.url;
+        const qi = masterBase.indexOf("?");
+        const mp = qi === -1 ? masterBase : masterBase.slice(0, qi);
+        if (!/\.m3u8$/i.test(mp)) masterBase = mp.replace(/\/$/, "") + ".m3u8" + (qi === -1 ? "" : masterBase.slice(qi));
+
         let servers = [];
         const streamsMatch = html.match(/window\.streams\s*=\s*(\[[\s\S]*?\]);/);
         if (streamsMatch) {
             try { servers = JSON.parse(streamsMatch[1]); } catch { }
         }
-        if (!Array.isArray(servers) || !servers.length) servers = [{ url: `${masterBase}?ub=1` }];
+        if (!Array.isArray(servers)) servers = [];
+        servers.unshift({ url: masterBase });
 
         const seen = {};
         servers = servers.filter((server) => {
             if (!server || !server.url) return false;
+            server.url = absUrl(String(server.url), BASE_URL + "/");
             const key = server.url.split("?")[0];
             if (seen[key]) return false;
             seen[key] = true;
@@ -175,7 +229,8 @@ async function getStreams(tmdbId, mediaType, season, episode) {
             try {
                 const masterUrl = buildUrl(server.url, params);
                 const master = await fetchText(masterUrl);
-                const parsed = parseMaster(master);
+                if (master.trim().indexOf("#EXTM3U") !== 0) return null;
+                const parsed = parseMaster(master, masterUrl);
                 if (!subtitlesPromise && parsed.subtitles.length) subtitlesPromise = resolveSubtitles(parsed.subtitles);
                 return {
                     url: masterUrl,
@@ -186,8 +241,8 @@ async function getStreams(tmdbId, mediaType, season, episode) {
             }
         });
 
-        const valid = (await Promise.all(jobs)).filter(Boolean);
-        if (!valid.length) return [];
+        let valid = (await Promise.all(jobs)).filter(Boolean);
+        if (!valid.length) valid = [{ url: buildUrl(masterBase, params), quality: "1080p" }];
 
         const subtitles = subtitlesPromise ? await subtitlesPromise : [];
 
