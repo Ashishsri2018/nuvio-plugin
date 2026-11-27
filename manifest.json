@@ -1,6 +1,6 @@
 {
   "name": "Eclipsia",
-  "version": "12.5.0",
+  "version": "12.6.0",
   "scrapers": [
     {
       "id": "brellor",
@@ -227,6 +227,27 @@
         "hi"
       ],
       "hasSettings": true
+    },
+    {
+      "id": "fyndra",
+      "name": "Fyndra.",
+      "description": "FshareTV • Vintage Movies",
+      "version": "1.4.0",
+      "author": "Eclipsia",
+      "supportedTypes": [
+        "movie"
+      ],
+      "filename": "https://eclipsia.codeberg.page/nuvio-plugin/providers/fyndra.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8",
+        "mkv"
+      ],
+      "logo": "",
+      "contentLanguage": [
+        "en"
+      ]
     },
     {
       "id": "fyron",
